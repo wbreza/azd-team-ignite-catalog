@@ -22,6 +22,13 @@
       "metadata": {
         "description": "Tags that will be applied to all resources"
       }
+    },
+    "repoUrl": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "URL of the GitHub repository containing the application code"
+      }
     }
   },
   "variables": {
