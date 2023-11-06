@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://github.com/Azure/deployment-environments/releases/download/2022-11-11-preview/manifest.schema.json
+name: eShop
+version: 1.0.0
+summary: Complete eShop deployment
+description: Deploys all eShop components includes database and applications
+runner: ARM
+templatePath: azuredeploy.json
+parameters:
+  - id: repoUrl
+    type: string
+    name: repoUrl
+    default: https://github.com/dotnet-architecture/eShop-Ignite

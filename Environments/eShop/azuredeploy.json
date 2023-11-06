@@ -1,0 +1,397 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.21.1.54444",
+      "templateHash": "9794499745563243570"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "The location used for all deployed resources"
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags that will be applied to all resources"
+      }
+    }
+  },
+  "variables": {
+    "resourceToken": "[uniqueString(resourceGroup().id)]",
+    "bindingContainerSharedKey": "gIktXMq0OxsYV21oLXlBt0J9IYkXz6AM"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ServiceBus/namespaces/topics",
+      "apiVersion": "2022-10-01-preview",
+      "name": "[format('{0}/{1}', format('EventBus-{0}', variables('resourceToken')), 'eshop_event_bus')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ServiceBus/namespaces', format('EventBus-{0}', variables('resourceToken')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02-preview",
+      "name": "appInsights",
+      "location": "[parameters('location')]",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', variables('resourceToken')))]"
+      },
+      "tags": "[union(parameters('tags'), createObject('aspire-resource-name', 'appInsights'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', variables('resourceToken')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ContainerRegistry/registries",
+      "apiVersion": "2023-07-01",
+      "name": "[replace(format('acr-{0}', variables('resourceToken')), '-', '')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Basic"
+      },
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[format('mi-{0}', variables('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', replace(format('acr-{0}', variables('resourceToken')), '-', ''))]",
+      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', replace(format('acr-{0}', variables('resourceToken')), '-', '')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('mi-{0}', variables('resourceToken'))), subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d'))]",
+      "properties": {
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('mi-{0}', variables('resourceToken'))), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal",
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ContainerRegistry/registries', replace(format('acr-{0}', variables('resourceToken')), '-', ''))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('mi-{0}', variables('resourceToken')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2022-10-01",
+      "name": "[format('law-{0}', variables('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        }
+      },
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2023-05-01",
+      "name": "[format('cae-{0}', variables('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "appLogsConfiguration": {
+          "destination": "log-analytics",
+          "logAnalyticsConfiguration": {
+            "customerId": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', variables('resourceToken'))), '2022-10-01').customerId]",
+            "sharedKey": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', variables('resourceToken'))), '2022-10-01').primarySharedKey]"
+          }
+        }
+      },
+      "tags": "[parameters('tags')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', variables('resourceToken')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-02-preview",
+      "name": "catalogdb",
+      "location": "[parameters('location')]",
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]",
+        "configuration": {
+          "service": {
+            "type": "postgres"
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "image": "postgres",
+              "name": "postgres"
+            }
+          ]
+        }
+      },
+      "tags": "[union(parameters('tags'), createObject('aspire-resource-name', 'CatalogDB'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-02-preview",
+      "name": "identitydb",
+      "location": "[parameters('location')]",
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]",
+        "configuration": {
+          "service": {
+            "type": "postgres"
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "image": "postgres",
+              "name": "postgres"
+            }
+          ]
+        }
+      },
+      "tags": "[union(parameters('tags'), createObject('aspire-resource-name', 'IdentityDB'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-02-preview",
+      "name": "orderingdb",
+      "location": "[parameters('location')]",
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]",
+        "configuration": {
+          "service": {
+            "type": "postgres"
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "image": "postgres",
+              "name": "postgres"
+            }
+          ]
+        }
+      },
+      "tags": "[union(parameters('tags'), createObject('aspire-resource-name', 'OrderingDB'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-02-preview",
+      "name": "webhooksdb",
+      "location": "[parameters('location')]",
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]",
+        "configuration": {
+          "service": {
+            "type": "postgres"
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "image": "postgres",
+              "name": "postgres"
+            }
+          ]
+        }
+      },
+      "tags": "[union(parameters('tags'), createObject('aspire-resource-name', 'WebHooksDB'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-02-preview",
+      "name": "redis",
+      "location": "[parameters('location')]",
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]",
+        "configuration": {
+          "service": {
+            "type": "redis"
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "image": "redis",
+              "name": "redis"
+            }
+          ]
+        }
+      },
+      "tags": "[union(parameters('tags'), createObject('aspire-resource-name', 'redis'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ServiceBus/namespaces",
+      "apiVersion": "2022-10-01-preview",
+      "name": "[format('EventBus-{0}', variables('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "minimumTlsVersion": "1.2"
+      },
+      "tags": "[union(parameters('tags'), createObject('aspire-resource-name', 'EventBus'))]"
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.ServiceBus/namespaces/{0}', format('EventBus-{0}', variables('resourceToken')))]",
+      "name": "[guid(resourceId('Microsoft.ServiceBus/namespaces', format('EventBus-{0}', variables('resourceToken'))), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('mi-{0}', variables('resourceToken'))), subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419'))]",
+      "properties": {
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('mi-{0}', variables('resourceToken'))), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal",
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ServiceBus/namespaces', format('EventBus-{0}', variables('resourceToken')))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('mi-{0}', variables('resourceToken')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-02-preview",
+      "name": "[format('bindingdebug-{0}', variables('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]",
+        "configuration": {
+          "activeRevisionsMode": "single",
+          "ingress": {
+            "external": true,
+            "targetPort": 8080,
+            "transport": "http",
+            "allowInsecure": false
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "image": "golang:1.21",
+              "name": "bindingdebug",
+              "command": [
+                "go",
+                "run",
+                "github.com/ellismg/env-var-dump@main"
+              ],
+              "env": [
+                {
+                  "name": "EVN_VAR_DUMP_SHARED_KEY",
+                  "value": "[variables('bindingContainerSharedKey')]"
+                }
+              ]
+            }
+          ],
+          "serviceBinds": [
+            {
+              "serviceId": "[resourceId('Microsoft.App/containerApps', 'catalogdb')]",
+              "name": "catalogdb"
+            },
+            {
+              "serviceId": "[resourceId('Microsoft.App/containerApps', 'identitydb')]",
+              "name": "identitydb"
+            },
+            {
+              "serviceId": "[resourceId('Microsoft.App/containerApps', 'orderingdb')]",
+              "name": "orderingdb"
+            },
+            {
+              "serviceId": "[resourceId('Microsoft.App/containerApps', 'webhooksdb')]",
+              "name": "webhooksdb"
+            },
+            {
+              "serviceId": "[resourceId('Microsoft.App/containerApps', 'redis')]",
+              "name": "redis"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/containerApps', 'catalogdb')]",
+        "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]",
+        "[resourceId('Microsoft.App/containerApps', 'identitydb')]",
+        "[resourceId('Microsoft.App/containerApps', 'orderingdb')]",
+        "[resourceId('Microsoft.App/containerApps', 'redis')]",
+        "[resourceId('Microsoft.App/containerApps', 'webhooksdb')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "AZURE_CONTAINER_REGISTRY_ENDPOINT": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', replace(format('acr-{0}', variables('resourceToken')), '-', '')), '2023-07-01').loginServer]"
+    },
+    "AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('mi-{0}', variables('resourceToken')))]"
+    },
+    "AZURE_CONTAINER_APPS_ENVIRONMENT_ID": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken')))]"
+    },
+    "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', variables('resourceToken'))), '2023-05-01').defaultDomain]"
+    },
+    "SERVICE_BINDING_APPINSIGHTS_ID": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/components', 'appInsights')]"
+    },
+    "SERVICE_BINDING_CATALOGDB_ID": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.App/containerApps', 'catalogdb')]"
+    },
+    "SERVICE_BINDING_IDENTITYDB_ID": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.App/containerApps', 'identitydb')]"
+    },
+    "SERVICE_BINDING_ORDERINGDB_ID": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.App/containerApps', 'orderingdb')]"
+    },
+    "SERVICE_BINDING_WEBHOOKSDB_ID": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.App/containerApps', 'webhooksdb')]"
+    },
+    "SERVICE_BINDING_REDIS_ID": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.App/containerApps', 'redis')]"
+    },
+    "SERVICE_BINDING_EVENTBUS_ENDPOINT": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ServiceBus/namespaces', format('EventBus-{0}', variables('resourceToken'))), '2022-10-01-preview').serviceBusEndpoint]"
+    },
+    "BINDING_DEBUG_CONTAINER_SHARED_KEY": {
+      "type": "string",
+      "value": "[variables('bindingContainerSharedKey')]"
+    },
+    "BINDING_DEBUG_CONTAINER_FQDN": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/containerApps', format('bindingdebug-{0}', variables('resourceToken'))), '2023-05-02-preview').configuration.ingress.fqdn]"
+    }
+  }
+}
